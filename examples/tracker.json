@@ -1,0 +1,25 @@
+{
+    "pods": [
+        {
+            "broker": "Acme Brokerage",
+            "carrier": "Blue Ridge Transport",
+            "delivery_date": "2026-10-20",
+            "load_number": "LD-1042",
+            "status": "missing"
+        },
+        {
+            "broker": "Acme Brokerage",
+            "carrier": "Prairie Line Hauling",
+            "delivery_date": "2026-10-28",
+            "load_number": "LD-1045",
+            "status": "missing"
+        },
+        {
+            "broker": "Summit Freight",
+            "carrier": "Blue Ridge Transport",
+            "delivery_date": "2026-10-15",
+            "load_number": "LD-1039",
+            "status": "received"
+        }
+    ]
+}
