@@ -18,6 +18,7 @@ Usage:
     python3 pod_chaser_templates.py list --file tracker.json
     python3 pod_chaser_templates.py list --file tracker.json --json
     python3 pod_chaser_templates.py list --file tracker.json --check
+    python3 pod_chaser_templates.py summary --file tracker.json
     python3 pod_chaser_templates.py render --file tracker.json \
         --load-number LD-1042 --template first_chase
     python3 pod_chaser_templates.py render --file tracker.json \
@@ -50,6 +51,12 @@ The --check flag on the list command exits 1 when any
 outstanding POD is more than --overdue-days days overdue
 (default 3), and exits 0 otherwise, so it works as a gate in a
 script. It still prints the list first.
+
+The summary command prints counts of outstanding PODs by carrier
+and by broker, plus the single most overdue load. Counts are
+sorted by count descending, then name ascending. The most
+overdue load is the first row of the outstanding list (most
+overdue first, ties broken by load number).
 """
 
 import argparse
@@ -347,6 +354,55 @@ def render_list_text(report):
     return "\n".join(lines)
 
 
+def sorted_counts(counts):
+    """Order a name -> count dict by count descending, then name."""
+    return dict(sorted(counts.items(),
+                       key=lambda item: (-item[1], item[0])))
+
+
+def summary_report(pods, reference_date=None):
+    """Build the summary report dict for outstanding PODs.
+
+    Counts outstanding PODs by carrier and by broker, and picks
+    the single most overdue load. Reuses the list report rows, so
+    the sorting and the computed days overdue match the list
+    command.
+    """
+    rows = list_report(pods, reference_date)["pods"]
+    by_carrier = {}
+    by_broker = {}
+    for row in rows:
+        by_carrier[row["carrier"]] = by_carrier.get(row["carrier"], 0) + 1
+        by_broker[row["broker"]] = by_broker.get(row["broker"], 0) + 1
+    return {
+        "outstanding": len(rows),
+        "by_carrier": sorted_counts(by_carrier),
+        "by_broker": sorted_counts(by_broker),
+        "most_overdue": rows[0] if rows else None,
+    }
+
+
+def render_summary_text(report):
+    lines = []
+    lines.append(f"Outstanding PODs: {report['outstanding']}")
+    if not report["most_overdue"]:
+        lines.append("None. No PODs are outstanding.")
+        return "\n".join(lines)
+    lines.append("By carrier:")
+    for name, count in report["by_carrier"].items():
+        lines.append(f"  {name}: {count}")
+    lines.append("By broker:")
+    for name, count in report["by_broker"].items():
+        lines.append(f"  {name}: {count}")
+    pod = report["most_overdue"]
+    lines.append(
+        f"Most overdue: {pod['load_number']}: {pod['carrier']} for "
+        f"{pod['broker']}, delivered {pod['delivery_date']}, "
+        f"{pod['days_overdue']} days overdue"
+    )
+    return "\n".join(lines)
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Chase missing PODs: track them and render "
@@ -368,6 +424,13 @@ def build_parser():
     p.add_argument("--overdue-days", type=int, default=3,
                    help="overdue threshold in days for --check "
                    "(default: 3)")
+
+    p = sub.add_parser("summary",
+                       help="summarize outstanding PODs by carrier "
+                       "and broker")
+    p.add_argument("--file", required=True, help="tracker JSON file")
+    p.add_argument("--json", action="store_true",
+                   help="print the summary as JSON")
 
     p = sub.add_parser("add", help="record a missing POD")
     p.add_argument("--file", required=True, help="tracker JSON file")
@@ -455,6 +518,14 @@ def main(argv=None):
             print(render_list_text(report))
         if args.check and report["any_overdue_past_threshold"]:
             return 1
+        return 0
+
+    if args.command == "summary":
+        report = summary_report(pods)
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print(render_summary_text(report))
         return 0
 
     if args.command == "received":
