@@ -18,6 +18,7 @@ Usage:
     python3 pod_chaser_templates.py list --file tracker.json
     python3 pod_chaser_templates.py list --file tracker.json --json
     python3 pod_chaser_templates.py list --file tracker.json --check
+    python3 pod_chaser_templates.py list --file tracker.json --days 7
     python3 pod_chaser_templates.py render --file tracker.json \
         --load-number LD-1042 --template first_chase
     python3 pod_chaser_templates.py render --file tracker.json \
@@ -50,6 +51,11 @@ The --check flag on the list command exits 1 when any
 outstanding POD is more than --overdue-days days overdue
 (default 3), and exits 0 otherwise, so it works as a gate in a
 script. It still prints the list first.
+
+The --days flag on the list command filters the outstanding list
+before printing: only PODs at least N days overdue are shown, and
+the report (count, --check gate, --json output) describes the
+filtered list. Without --days every outstanding POD is listed.
 """
 
 import argparse
@@ -309,12 +315,19 @@ def render_for_record(name, record, overrides=None,
     return render_template(name, values)
 
 
-def list_report(pods, reference_date=None, overdue_days=3):
-    """Build the list report dict for outstanding PODs."""
+def list_report(pods, reference_date=None, overdue_days=3,
+                min_days=None):
+    """Build the list report dict for outstanding PODs.
+
+    When min_days is set, only records at least that many days
+    overdue are kept, so the report describes the filtered list.
+    """
     ref = reference_date or date.today()
     rows = []
     for record in outstanding(pods, ref):
         overdue = days_overdue(record["delivery_date"], ref)
+        if min_days is not None and overdue < min_days:
+            continue
         rows.append({
             "load_number": record["load_number"],
             "carrier": record.get("carrier", ""),
@@ -327,6 +340,7 @@ def list_report(pods, reference_date=None, overdue_days=3):
     return {
         "outstanding": len(rows),
         "overdue_days_threshold": overdue_days,
+        "min_days": min_days,
         "any_overdue_past_threshold": has_overdue,
         "pods": rows,
     }
@@ -368,6 +382,9 @@ def build_parser():
     p.add_argument("--overdue-days", type=int, default=3,
                    help="overdue threshold in days for --check "
                    "(default: 3)")
+    p.add_argument("--days", type=int, default=None,
+                   help="show only PODs at least N days overdue "
+                   "(default: show all outstanding)")
 
     p = sub.add_parser("add", help="record a missing POD")
     p.add_argument("--file", required=True, help="tracker JSON file")
@@ -448,7 +465,8 @@ def main(argv=None):
         return 2
 
     if args.command == "list":
-        report = list_report(pods, overdue_days=args.overdue_days)
+        report = list_report(pods, overdue_days=args.overdue_days,
+                             min_days=args.days)
         if args.json:
             print(json.dumps(report, indent=2))
         else:
