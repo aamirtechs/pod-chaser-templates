@@ -1,4 +1,5 @@
 # pod-chaser-templates
+**Live tool:** https://aamirtechs.github.io/pod-chaser-templates/ (runs in your browser, no install)
 
 Chase missing PODs (proof of delivery) in truck dispatching, with
 built-in follow-up templates and a small tracker CLI. No account,

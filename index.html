@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pod-chaser-templates · AamirTechs Tools</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f6f8fb; color: #1c2733; }
+  header { background: #0b1f3a; color: #ffffff; padding: 28px 20px 22px; border-bottom: 4px solid #d4a72c; }
+  header .wrap { max-width: 960px; margin: 0 auto; }
+  header h1 { margin: 0 0 6px; font-size: 28px; }
+  header p { margin: 0; color: #c9d6e8; font-size: 15px; }
+  main { max-width: 960px; margin: 24px auto 40px; padding: 0 16px; }
+  .card { background: #ffffff; border-radius: 12px; box-shadow: 0 2px 10px rgba(11, 31, 58, 0.08); padding: 22px; }
+  label { display: block; font-weight: 600; margin: 16px 0 6px; font-size: 14px; }
+  label:first-child { margin-top: 0; }
+  textarea { width: 100%; min-height: 150px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; padding: 10px; border: 1px solid #c8d2de; border-radius: 8px; background: #fbfcfe; }
+  input[type="text"], input[type="date"] { width: 100%; padding: 9px 10px; border: 1px solid #c8d2de; border-radius: 8px; font-size: 14px; }
+  select { padding: 9px 10px; border: 1px solid #c8d2de; border-radius: 8px; font-size: 14px; background: #ffffff; width: 100%; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; }
+  .row > div { flex: 1 1 180px; }
+  .buttons { margin: 20px 0 6px; display: flex; flex-wrap: wrap; gap: 10px; }
+  button { border: 0; border-radius: 8px; padding: 11px 20px; font-size: 15px; cursor: pointer; }
+  #run { background: #0b1f3a; color: #ffffff; font-weight: 600; }
+  #run:hover { background: #143058; }
+  .secondary { background: #eef2f7; color: #0b1f3a; border: 1px solid #c8d2de; }
+  .secondary:hover { background: #e2eaf3; }
+  #download { background: #d4a72c; color: #0b1f3a; font-weight: 600; }
+  pre { background: #0b1f3a; color: #e8eef6; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; min-height: 60px; white-space: pre-wrap; }
+  footer { max-width: 960px; margin: 0 auto 30px; padding: 0 16px; color: #5a6a7d; font-size: 13px; text-align: center; }
+  footer a { color: #0b1f3a; }
+  .hint { font-weight: 400; color: #5a6a7d; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>pod-chaser-templates</h1>
+    <p>Track missing PODs and render ready to send follow-up messages.</p>
+  </div>
+</header>
+<main>
+  <div class="card">
+    <label for="file">Tracker JSON file <span class="hint">(or paste the tracker JSON below)</span></label>
+    <input type="file" id="file" accept=".json,application/json">
+    <label for="input">Tracker JSON</label>
+    <textarea id="input" placeholder="Paste tracker JSON here, or load the sample."></textarea>
+    <div class="row">
+      <div>
+        <label for="template">Template</label>
+        <select id="template">
+          <option value="first_chase" selected>first_chase: polite first follow-up</option>
+          <option value="second_chase">second_chase: firmer second follow-up</option>
+          <option value="urgent">urgent: escalation</option>
+          <option value="factoring_deadline">factoring_deadline: factoring deadline</option>
+          <option value="sms_first_chase">sms_first_chase: short SMS first chase</option>
+          <option value="sms_urgent">sms_urgent: short SMS escalation</option>
+        </select>
+      </div>
+      <div>
+        <label for="loadnumber">Load number <span class="hint">(blank: most overdue outstanding)</span></label>
+        <input type="text" id="loadnumber" placeholder="LD-1042">
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="dispatcher">Dispatcher name <span class="hint">(blank: Dispatch Team)</span></label>
+        <input type="text" id="dispatcher" placeholder="Dispatch Team">
+      </div>
+      <div>
+        <label for="today">Reference date <span class="hint">(for days overdue)</span></label>
+        <input type="date" id="today">
+      </div>
+    </div>
+    <div class="buttons">
+      <button id="run" type="button">Run</button>
+      <button id="sample" type="button" class="secondary">Load sample</button>
+      <button id="download" type="button">Download report</button>
+    </div>
+    <pre id="output">Your chase list and rendered message will appear here.</pre>
+  </div>
+</main>
+<footer>
+  <p>Built by AamirTechs · <a href="https://aamirtechs.github.io/">All tools</a> · <a href="https://github.com/aamirtechs/pod-chaser-templates">Source</a></p>
+  <p>Privacy: this tool runs 100% in your browser, nothing is uploaded.</p>
+</footer>
+
+<script id="core">
+"use strict";
+/* Core logic: a faithful port of pod_chaser_templates.py (the list and
+   render commands). Pure functions only, no DOM access.
+   window.runTool(inputText, options) -> report string.
+   inputText is the tracker JSON. The report is the chase list (the CLI
+   "list" text) followed by the rendered message for one load (the CLI
+   "render" output). options:
+     template       one of the six template names (default first_chase)
+     loadNumber     load to render for; "" picks the most overdue
+                    outstanding POD, like a dispatcher working the list top
+     dispatcherName signer for {dispatcher_name}; "" means the CLI
+                    default "Dispatch Team"
+     fields         optional object of extra {placeholder} overrides,
+                    the CLI --field key=value pairs
+     overdueDays    overdue threshold for the list report (default 3)
+     today          reference date "YYYY-MM-DD" for days overdue;
+                    "" means today, matching the CLI
+*/
+
+var TEMPLATES = {
+  "first_chase": "Subject: POD needed for load {load_number} delivered {delivery_date}\n\nHi {carrier_name},\n\nWe are missing the signed proof of delivery for load {load_number}, delivered on {delivery_date} for {broker_name}. Could you please send the signed POD at your earliest convenience?\n\nThank you,\n{dispatcher_name}",
+  "second_chase": "Subject: Second request: POD still missing for load {load_number}\n\nHi {carrier_name},\n\nThis is a second request for the signed proof of delivery for load {load_number}, delivered on {delivery_date} for {broker_name}. It is now {days_overdue} days past delivery and we still do not have the POD on file. Please send it today so payment is not delayed.\n\nThank you,\n{dispatcher_name}",
+  "urgent": "Subject: Urgent: POD overdue for load {load_number} - escalation\n\nHi {carrier_name},\n\nThe signed proof of delivery for load {load_number}, delivered on {delivery_date} for {broker_name}, is now {days_overdue} days overdue. This is an escalation. Payment for this load cannot move forward without the signed POD. Please send it today, or let us know right away if there is a problem with the delivery paperwork.\n\nThank you,\n{dispatcher_name}",
+  "factoring_deadline": "Subject: POD needed before factoring deadline: load {load_number}\n\nHi {carrier_name},\n\nWe need the signed proof of delivery for load {load_number}, delivered on {delivery_date} for {broker_name}, before our factoring deadline. The load is already {days_overdue} days past delivery. If we do not receive the POD in time, funding for this load will be delayed. Please send the signed POD today.\n\nThank you,\n{dispatcher_name}",
+  "sms_first_chase": "Hi {carrier_name}, this is {dispatcher_name}. We are missing the signed POD for load {load_number}, delivered {delivery_date} for {broker_name}. Could you send it over today? Thanks.",
+  "sms_urgent": "Urgent: signed POD for load {load_number} ({delivery_date}, {broker_name}) is {days_overdue} days overdue and payment is on hold. Please send it today, {carrier_name}."
+};
+
+var DEFAULT_DISPATCHER = "Dispatch Team";
+var STATUS_MISSING = "missing";
+var STATUS_RECEIVED = "received";
+
+function PodError(message) { this.message = message; }
+PodError.prototype = Object.create(Error.prototype);
+
+function pyReprStr(s) {
+  return "'" + String(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'";
+}
+
+function parseDeliveryDate(text) {
+  var parts = String(text).split("-");
+  var ok = parts.length === 3 && parts.every(function (p) { return /^\d+$/.test(p); });
+  if (!ok) {
+    throw new PodError("delivery_date must be YYYY-MM-DD, got " + pyReprStr(text));
+  }
+  var y = parseInt(parts[0], 10), m = parseInt(parts[1], 10), d = parseInt(parts[2], 10);
+  var leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  var daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (y < 1 || y > 9999 || m < 1 || m > 12 || d < 1 || d > daysInMonth[m - 1]) {
+    throw new PodError("delivery_date is not a real date: " + pyReprStr(text));
+  }
+  return { y: y, m: m, d: d };
+}
+
+function dayNumber(dateObj) {
+  return Math.floor(Date.UTC(dateObj.y, dateObj.m - 1, dateObj.d) / 86400000);
+}
+
+function daysOverdue(deliveryDate, referenceDate) {
+  var dd = (typeof deliveryDate === "string") ? parseDeliveryDate(deliveryDate) : deliveryDate;
+  return dayNumber(referenceDate) - dayNumber(dd);
+}
+
+function parseReferenceDate(text) {
+  if (!text) {
+    var now = new Date();
+    return { y: now.getFullYear(), m: now.getMonth() + 1, d: now.getDate() };
+  }
+  return parseDeliveryDate(text);
+}
+
+function loadTracker(text) {
+  var data;
+  try { data = JSON.parse(text || ""); }
+  catch (e) { throw new PodError(e.message); }
+  if (Array.isArray(data)) { return data; }
+  if (data !== null && typeof data === "object" && Array.isArray(data.pods)) { return data.pods; }
+  throw new PodError("tracker file must be a JSON object with a 'pods' list, " +
+    "or a bare JSON list of records");
+}
+
+function getField(record, key, fallback) {
+  return (key in record) ? record[key] : fallback;
+}
+
+function outstanding(pods, ref) {
+  var open = pods.filter(function (p) { return p.status !== STATUS_RECEIVED; });
+  open.sort(function (a, b) {
+    var diff = daysOverdue(b.delivery_date, ref) - daysOverdue(a.delivery_date, ref);
+    if (diff !== 0) { return diff; }
+    var la = String(a.load_number), lb = String(b.load_number);
+    return la < lb ? -1 : (la > lb ? 1 : 0);
+  });
+  return open;
+}
+
+function listReport(pods, ref, overdueDays) {
+  var rows = outstanding(pods, ref).map(function (record) {
+    return {
+      load_number: record.load_number,
+      carrier: getField(record, "carrier", ""),
+      broker: getField(record, "broker", ""),
+      delivery_date: getField(record, "delivery_date", ""),
+      days_overdue: daysOverdue(record.delivery_date, ref),
+      status: getField(record, "status", STATUS_MISSING)
+    };
+  });
+  return {
+    outstanding: rows.length,
+    overdue_days_threshold: overdueDays,
+    any_overdue_past_threshold: rows.some(function (r) { return r.days_overdue > overdueDays; }),
+    pods: rows
+  };
+}
+
+function renderListText(report) {
+  var lines = ["Outstanding PODs: " + report.outstanding];
+  if (!report.pods.length) {
+    lines.push("None. No PODs are outstanding.");
+    return lines.join("\n");
+  }
+  report.pods.forEach(function (pod) {
+    lines.push("  " + pod.load_number + ": " + pod.carrier + " for " + pod.broker +
+      ", delivered " + pod.delivery_date + ", " + pod.days_overdue + " days overdue");
+  });
+  return lines.join("\n");
+}
+
+function strValue(v) {
+  if (v === null || v === undefined) { return "None"; }
+  if (v === true) { return "True"; }
+  if (v === false) { return "False"; }
+  return String(v);
+}
+
+function recordValues(record, ref) {
+  return {
+    load_number: record.load_number,
+    carrier_name: getField(record, "carrier", ""),
+    broker_name: getField(record, "broker", ""),
+    delivery_date: getField(record, "delivery_date", ""),
+    days_overdue: String(daysOverdue(record.delivery_date, ref)),
+    status: getField(record, "status", STATUS_MISSING)
+  };
+}
+
+function renderTemplate(name, values) {
+  if (!(name in TEMPLATES)) { throw new PodError("unknown template: " + pyReprStr(name)); }
+  return TEMPLATES[name].replace(/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, function (match, key) {
+    if (key in values) { return strValue(values[key]); }
+    return match;
+  });
+}
+
+function renderForRecord(name, record, overrides, ref) {
+  var values = recordValues(record, ref);
+  Object.keys(overrides || {}).forEach(function (k) { values[k] = overrides[k]; });
+  return renderTemplate(name, values);
+}
+
+window.runTool = function (inputText, options) {
+  options = options || {};
+  var pods;
+  try { pods = loadTracker(inputText || ""); }
+  catch (e) {
+    if (e instanceof PodError) { return "error: " + e.message + "\n"; }
+    throw e;
+  }
+  var ref;
+  try { ref = parseReferenceDate(options.today || ""); }
+  catch (e) { return "error: " + e.message + "\n"; }
+  var overdueDays = (options.overdueDays === undefined || options.overdueDays === null || options.overdueDays === "")
+    ? 3 : parseInt(options.overdueDays, 10);
+  var out;
+  try {
+    var report = listReport(pods, ref, overdueDays);
+    out = renderListText(report) + "\n";
+
+    var loadNumber = options.loadNumber || "";
+    var record = null;
+    if (loadNumber) {
+      for (var i = 0; i < pods.length; i++) {
+        if (pods[i].load_number === loadNumber) { record = pods[i]; break; }
+      }
+      if (record === null) { return "error: load not found in tracker: " + loadNumber + "\n"; }
+    } else {
+      var open = outstanding(pods, ref);
+      if (open.length) { record = open[0]; loadNumber = String(record.load_number); }
+    }
+    if (record !== null) {
+      var overrides = {};
+      Object.keys(options.fields || {}).forEach(function (k) { overrides[k] = options.fields[k]; });
+      if (!("dispatcher_name" in overrides)) {
+        overrides.dispatcher_name = options.dispatcherName ? String(options.dispatcherName) : DEFAULT_DISPATCHER;
+      }
+      var template = options.template || "first_chase";
+      var message = renderForRecord(template, record, overrides, ref);
+      out += "\nRendered message (" + template + " for " + loadNumber + "):\n\n" + message + "\n";
+    }
+  } catch (e) {
+    if (e instanceof PodError) { return "error: " + e.message + "\n"; }
+    throw e;
+  }
+  return out;
+};
+</script>
+
+<script>
+"use strict";
+var SAMPLE_TRACKER = `{
+    "pods": [
+        {
+            "broker": "Acme Brokerage",
+            "carrier": "Blue Ridge Transport",
+            "delivery_date": "2026-10-20",
+            "load_number": "LD-1042",
+            "status": "missing"
+        },
+        {
+            "broker": "Acme Brokerage",
+            "carrier": "Prairie Line Hauling",
+            "delivery_date": "2026-10-28",
+            "load_number": "LD-1045",
+            "status": "missing"
+        },
+        {
+            "broker": "Summit Freight",
+            "carrier": "Blue Ridge Transport",
+            "delivery_date": "2026-10-15",
+            "load_number": "LD-1039",
+            "status": "received"
+        }
+    ]
+}
+`;
+var inputEl = document.getElementById("input");
+var outputEl = document.getElementById("output");
+var todayEl = document.getElementById("today");
+(function () {
+  var now = new Date();
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  todayEl.value = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+})();
+document.getElementById("file").addEventListener("change", function (ev) {
+  var f = ev.target.files[0];
+  if (!f) { return; }
+  var reader = new FileReader();
+  reader.onload = function () { inputEl.value = String(reader.result); };
+  reader.readAsText(f);
+});
+function loadSample() {
+  inputEl.value = SAMPLE_TRACKER;
+  document.getElementById("template").value = "first_chase";
+  document.getElementById("loadnumber").value = "LD-1042";
+  document.getElementById("dispatcher").value = "Chris Blake";
+}
+document.getElementById("sample").addEventListener("click", loadSample);
+document.getElementById("run").addEventListener("click", function () {
+  var report = window.runTool(inputEl.value, {
+    template: document.getElementById("template").value,
+    loadNumber: document.getElementById("loadnumber").value,
+    dispatcherName: document.getElementById("dispatcher").value,
+    today: todayEl.value
+  });
+  outputEl.textContent = report.replace(/\n$/, "");
+});
+document.getElementById("download").addEventListener("click", function () {
+  var blob = new Blob([outputEl.textContent + "\n"], { type: "text/plain" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "pod-chaser-templates-report.txt";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+loadSample();
+</script>
+</body>
+</html>
