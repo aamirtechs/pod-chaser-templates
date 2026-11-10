@@ -18,6 +18,7 @@ from pod_chaser_templates import (
     parse_fields,
     render_for_record,
     render_template,
+    summary_report,
 )
 
 SCRIPT = os.path.join(
@@ -185,6 +186,57 @@ class TestTrackerLogic(unittest.TestCase):
             add_pod([], record("LD-9", delivery="2026-02-30"))
 
 
+class TestSummaryReport(unittest.TestCase):
+    def test_counts_by_carrier_and_broker(self):
+        pods = [
+            record("LD-1", carrier="Blue Ridge", broker="Acme"),
+            record("LD-2", carrier="Blue Ridge", broker="Acme"),
+            record("LD-3", carrier="Prairie", broker="Summit"),
+        ]
+        report = summary_report(pods, REF)
+        self.assertEqual(report["outstanding"], 3)
+        self.assertEqual(
+            report["by_carrier"], {"Blue Ridge": 2, "Prairie": 1})
+        self.assertEqual(
+            report["by_broker"], {"Acme": 2, "Summit": 1})
+
+    def test_counts_sorted_by_count_then_name(self):
+        pods = [
+            record("LD-1", carrier="Zeta", broker="Acme"),
+            record("LD-2", carrier="Alpha", broker="Acme"),
+            record("LD-3", carrier="Alpha", broker="Beta"),
+        ]
+        report = summary_report(pods, REF)
+        self.assertEqual(list(report["by_carrier"]), ["Alpha", "Zeta"])
+        self.assertEqual(list(report["by_broker"]), ["Acme", "Beta"])
+
+    def test_most_overdue_is_first_outstanding_row(self):
+        pods = [
+            record("LD-1", delivery="2026-10-28"),
+            record("LD-2", delivery="2026-10-15"),
+        ]
+        report = summary_report(pods, REF)
+        self.assertEqual(report["most_overdue"]["load_number"], "LD-2")
+        self.assertEqual(report["most_overdue"]["days_overdue"], 16)
+
+    def test_received_excluded_from_summary(self):
+        pods = [
+            record("LD-1", status="received"),
+            record("LD-2"),
+        ]
+        report = summary_report(pods, REF)
+        self.assertEqual(report["outstanding"], 1)
+        self.assertEqual(
+            report["by_carrier"], {"Blue Ridge Transport": 1})
+
+    def test_empty_tracker_has_no_most_overdue(self):
+        report = summary_report([], REF)
+        self.assertEqual(report["outstanding"], 0)
+        self.assertEqual(report["by_carrier"], {})
+        self.assertEqual(report["by_broker"], {})
+        self.assertIsNone(report["most_overdue"])
+
+
 class TestCli(unittest.TestCase):
     def test_list_json_output_sorted(self):
         path = write_tracker([
@@ -307,6 +359,57 @@ class TestCli(unittest.TestCase):
 
     def test_list_missing_file_exits_2(self):
         result = run_cli(["list", "--file",
+                          "/tmp/does-not-exist-pod-chaser.json"])
+        self.assertEqual(result.returncode, 2)
+
+    def test_summary_cli_text_output(self):
+        path = write_tracker([
+            record("LD-1", delivery="2026-10-15"),
+            record("LD-2", delivery="2026-10-28"),
+            record("LD-3", delivery="2026-10-20", status="received"),
+        ])
+        try:
+            result = run_cli(["summary", "--file", path])
+        finally:
+            os.unlink(path)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Outstanding PODs: 2", result.stdout)
+        self.assertIn("By carrier:", result.stdout)
+        self.assertIn("Blue Ridge Transport: 2", result.stdout)
+        self.assertIn("By broker:", result.stdout)
+        self.assertIn("Acme Brokerage: 2", result.stdout)
+        self.assertIn("Most overdue: LD-1", result.stdout)
+        self.assertNotIn("LD-3", result.stdout)
+
+    def test_summary_cli_json_output(self):
+        path = write_tracker([
+            record("LD-1", delivery="2026-10-15"),
+            record("LD-2", delivery="2026-10-28"),
+        ])
+        try:
+            result = run_cli(["summary", "--file", path, "--json"])
+        finally:
+            os.unlink(path)
+        self.assertEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["outstanding"], 2)
+        self.assertEqual(data["by_carrier"], {"Blue Ridge Transport": 2})
+        self.assertEqual(data["by_broker"], {"Acme Brokerage": 2})
+        self.assertEqual(data["most_overdue"]["load_number"], "LD-1")
+        self.assertIn("days_overdue", data["most_overdue"])
+
+    def test_summary_cli_when_none_outstanding(self):
+        path = write_tracker([record(status="received")])
+        try:
+            result = run_cli(["summary", "--file", path])
+        finally:
+            os.unlink(path)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Outstanding PODs: 0", result.stdout)
+        self.assertIn("None. No PODs are outstanding.", result.stdout)
+
+    def test_summary_missing_file_exits_2(self):
+        result = run_cli(["summary", "--file",
                           "/tmp/does-not-exist-pod-chaser.json"])
         self.assertEqual(result.returncode, 2)
 

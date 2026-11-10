@@ -36,6 +36,8 @@ python3 pod_chaser_templates.py list --file tracker.json --json
 python3 pod_chaser_templates.py list --file tracker.json --check
 python3 pod_chaser_templates.py list --file tracker.json --check \
   --overdue-days 7
+python3 pod_chaser_templates.py summary --file tracker.json
+python3 pod_chaser_templates.py summary --file tracker.json --json
 python3 pod_chaser_templates.py render --file tracker.json \
   --load-number LD-1042 --template first_chase
 python3 pod_chaser_templates.py render --file tracker.json \
@@ -45,13 +47,17 @@ python3 pod_chaser_templates.py received --file tracker.json \
   --load-number LD-1042
 ```
 
-`--json` on `list` or `render` prints the result as JSON.
-`--check` on `list` prints the list and then exits 1 when any
-outstanding POD is more than `--overdue-days` days overdue
+`--json` on `list`, `summary`, or `render` prints the result as
+JSON. `--check` on `list` prints the list and then exits 1 when
+any outstanding POD is more than `--overdue-days` days overdue
 (default 3), and exits 0 otherwise, so it works as a gate in a
-script. `--field key=value` on `render` overrides a placeholder
-value; it is repeatable. Without a `dispatcher_name` override,
-rendered messages are signed "Dispatch Team".
+script. `summary` prints counts of outstanding PODs by carrier
+and by broker, plus the single most overdue load; counts are
+sorted by count descending, then name ascending, and the most
+overdue load is the first row of the outstanding list. `--field
+key=value` on `render` overrides a placeholder value; it is
+repeatable. Without a `dispatcher_name` override, rendered
+messages are signed "Dispatch Team".
 
 ## Placeholders
 
@@ -103,6 +109,19 @@ Outstanding PODs: 2
 
 That same list with `--check` exits 1, because LD-1042 is 11 days
 overdue, past the default threshold of 3 days.
+
+A summary of the same tracker (run on 2026-11-07, so the days
+overdue counts are higher):
+
+```
+Outstanding PODs: 2
+By carrier:
+  Blue Ridge Transport: 1
+  Prairie Line Hauling: 1
+By broker:
+  Acme Brokerage: 2
+Most overdue: LD-1042: Blue Ridge Transport for Acme Brokerage, delivered 2026-10-20, 18 days overdue
+```
 
 The list with `--json`:
 
@@ -180,11 +199,13 @@ Outstanding PODs: 2
 python3 -m unittest discover -s tests
 ```
 
-32 tests, covering template rendering for all six templates,
+41 tests, covering template rendering for all six templates,
 missing placeholders left intact, `--field` overrides, overdue
 calculation, overdue sorting, mark-received behavior, duplicate
-and invalid-date rejection, `--json` output, and `--check` exit
-codes including a custom threshold.
+and invalid-date rejection, `--json` output, `--check` exit
+codes including a custom threshold, and the `summary` command
+(counts by carrier and broker, most overdue load, empty and
+received-only trackers).
 
 ## License
 
