@@ -185,6 +185,28 @@ class TestTrackerLogic(unittest.TestCase):
             add_pod([], record("LD-9", delivery="2026-02-30"))
 
 
+class TestListReport(unittest.TestCase):
+    def test_min_days_keeps_only_old_pods(self):
+        pods = [
+            record("LD-1", delivery="2026-10-15"),
+            record("LD-2", delivery="2026-10-28"),
+        ]
+        report = list_report(pods, REF, min_days=5)
+        self.assertEqual(report["outstanding"], 1)
+        self.assertEqual(report["min_days"], 5)
+        self.assertEqual(
+            [p["load_number"] for p in report["pods"]], ["LD-1"])
+
+    def test_without_min_days_everything_is_kept(self):
+        pods = [
+            record("LD-1", delivery="2026-10-15"),
+            record("LD-2", delivery="2026-10-28"),
+        ]
+        report = list_report(pods, REF)
+        self.assertEqual(report["outstanding"], 2)
+        self.assertIsNone(report["min_days"])
+
+
 class TestCli(unittest.TestCase):
     def test_list_json_output_sorted(self):
         path = write_tracker([
@@ -244,6 +266,77 @@ class TestCli(unittest.TestCase):
         finally:
             os.unlink(path)
         self.assertEqual(result.returncode, 0)
+
+    def test_days_filter_shows_only_old_pods(self):
+        ten_days_ago = date.fromordinal(
+            date.today().toordinal() - 10).isoformat()
+        one_day_ago = date.fromordinal(
+            date.today().toordinal() - 1).isoformat()
+        path = write_tracker([
+            record("LD-1", delivery=ten_days_ago),
+            record("LD-2", delivery=one_day_ago),
+        ])
+        try:
+            result = run_cli(["list", "--file", path, "--json",
+                              "--days", "5"])
+        finally:
+            os.unlink(path)
+        self.assertEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["outstanding"], 1)
+        self.assertEqual(data["min_days"], 5)
+        self.assertEqual(data["pods"][0]["load_number"], "LD-1")
+
+    def test_days_filter_text_output(self):
+        ten_days_ago = date.fromordinal(
+            date.today().toordinal() - 10).isoformat()
+        one_day_ago = date.fromordinal(
+            date.today().toordinal() - 1).isoformat()
+        path = write_tracker([
+            record("LD-1", delivery=ten_days_ago),
+            record("LD-2", delivery=one_day_ago),
+        ])
+        try:
+            result = run_cli(["list", "--file", path, "--days", "5"])
+        finally:
+            os.unlink(path)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn("Outstanding PODs: 1", result.stdout)
+        self.assertIn("LD-1", result.stdout)
+        self.assertNotIn("LD-2", result.stdout)
+
+    def test_days_zero_excludes_future_delivery(self):
+        yesterday = date.fromordinal(
+            date.today().toordinal() - 1).isoformat()
+        tomorrow = date.fromordinal(
+            date.today().toordinal() + 1).isoformat()
+        path = write_tracker([
+            record("LD-1", delivery=yesterday),
+            record("LD-2", delivery=tomorrow),
+        ])
+        try:
+            result = run_cli(["list", "--file", path, "--json",
+                              "--days", "0"])
+        finally:
+            os.unlink(path)
+        self.assertEqual(result.returncode, 0)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["outstanding"], 1)
+        self.assertEqual(data["pods"][0]["load_number"], "LD-1")
+
+    def test_days_filter_applies_to_check(self):
+        ten_days_ago = date.fromordinal(
+            date.today().toordinal() - 10).isoformat()
+        path = write_tracker([record("LD-1", delivery=ten_days_ago)])
+        try:
+            filtered_out = run_cli(["list", "--file", path, "--check",
+                                    "--days", "30"])
+            filtered_in = run_cli(["list", "--file", path, "--check",
+                                   "--days", "5"])
+        finally:
+            os.unlink(path)
+        self.assertEqual(filtered_out.returncode, 0)
+        self.assertEqual(filtered_in.returncode, 1)
 
     def test_add_and_received_cli_round_trip(self):
         handle = tempfile.NamedTemporaryFile(
